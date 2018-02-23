@@ -58,7 +58,7 @@ function wpinv_gateway_settings_ipayby( $setting ) {
         'name' => __( 'Пароль личного ключа', 'invoicing' ),
         'desc' => __( 'Пароль, которым зашифрован личный ключ', 'invoicing' ),
         'std' => 'private_key_pass',
-    );        
+    );
 
     $setting['ipay_ipn_url'] = array(
         'type' => 'ipn_url',
@@ -74,7 +74,12 @@ function wpinv_gateway_settings_ipayby( $setting ) {
 }
 add_filter( 'wpinv_gateway_settings_ipayby', 'wpinv_gateway_settings_ipayby', 10, 1 );
 
-/* подготовка и отправка платежа в ipay.by */
+/**
+ * подготовка и отправка платежа в ipay.by
+ *
+ * @param array $purchase_data данные о платеже
+ * @return void
+ */
 function wpinv_process_ipayby_payment( $purchase_data ) {
     if( ! wp_verify_nonce( $purchase_data['gateway_nonce'], 'wpi-gateway' ) ) {
         wp_die( __( 'Nonce verification has failed', 'invoicing' ), __( 'Error', 'invoicing' ), array( 'response' => 403 ) );
@@ -84,7 +89,7 @@ function wpinv_process_ipayby_payment( $purchase_data ) {
     * данные о заказе приходят в виде
     *
     $purchase_data = array(
-        'invoice_id'= > invoice_id 
+        'invoice_id'= > invoice_id
         'items' => array of item IDs,
         'price' => total price of cart contents,
         'invoice_key' =>  // Random key
@@ -110,41 +115,41 @@ function wpinv_process_ipayby_payment( $purchase_data ) {
             'currencyCode'  => 933, // BYN - 933
             'returnUrl'		=> wpinv_get_ipn_url( 'ipayby' ) . '&invoiceKey=' . $purchase_data['invoice_key'],
             'description'	=> 'оплата счета №'.$invoice->number .' на сайте '. site_url(),
-            'clientId'		=> $purchase_data['user_email'], 
+            'clientId'		=> $purchase_data['user_email'],
         );
 
-        // если есть код транзакции, сразу переходим к оплате 
+        // если есть код транзакции, сразу переходим к оплате
         // неправильное поведение(возможно): при пустом поле транзакции возвращает invoice_id
         if (
-            $payment_data['transactionId'] 
+            $payment_data['transactionId']
             && !$invoice->has_status(array('wpi-processed'))
             && $payment_data['transactionId'] !== $payment_data['orderNumber']
         ) {
-            $baseUrl = 'https://mpi-test.bgpb.by'; // TODO: вынести в настройки, 
+            $baseUrl = 'https://mpi-test.bgpb.by'; // TODO: вынести в настройки,
             $formUrl = $baseUrl . '/payment/merchants/Testing/payment_ru.html?mdOrder='.$payment_data['transactionId'];
             wp_redirect($formUrl);
-            exit;            
+            exit;
         }
 
         if (!$invoice->has_status(array('wpi-pending', 'wpi-failed'))) {
             wpinv_record_gateway_error('Ошибка платежа ipay.by', sprintf( 'Ошибка статуса счета, нельзя оплатить счет со статусом : %s', '('. $invoice->get_status(false) . ') ' .  $invoice->get_status(true)), $invoice->ID );
             wpinv_insert_payment_note($invoice->ID, sprintf( 'Ошибка статуса счета, нельзя оплатить счет со статусом : %s', $invoice->get_status(true)));
-            wpinv_send_to_failed_page();              
+            wpinv_send_to_failed_page();
         }
         // устанавливаем статус заказа "в обработке"
         wpinv_update_payment_status( $invoice->ID, 'wpi-processing' );
         // получаем ссылку на форму оплаты
         $bankResponseData = wpinv_ipayby_get_payment_data($payment_data);
-        if($bankResponseData) { 
+        if($bankResponseData) {
             if(0 != $bankResponseData['errorCode']) {
-                wpinv_record_gateway_error('Ошибка платежа ipay.by', sprintf( 'Ошибка системы ipay.by: %s', $bankResponseData['errorMessage']), $invoice->ID );         
+                wpinv_record_gateway_error('Ошибка платежа ipay.by', sprintf( 'Ошибка системы ipay.by: %s', $bankResponseData['errorMessage']), $invoice->ID );
                 wpinv_insert_payment_note($invoice->ID, sprintf( 'Ошибка системы ipay.by: %s-%s', $bankResponseData['errorCode'], $bankResponseData['errorMessage']));
                 wpinv_update_payment_status( $invoice->ID, 'wpi-pending' );
-                wpinv_send_to_failed_page();       
-            } 
-            // Empty the shopping cart
+                wpinv_send_to_failed_page();
+            }
+            // очищаем корзину
             wpinv_empty_cart();
-            // сохраняем код транзакции 
+            // сохраняем код транзакции
             wpinv_set_payment_transaction_id( $invoice->ID, $bankResponseData['orderId'] );
             // переходим к оплате
             wp_redirect($bankResponseData['formUrl']);
@@ -155,7 +160,7 @@ function wpinv_process_ipayby_payment( $purchase_data ) {
             wpinv_record_gateway_error('Ошибка платежа ipay.by', sprintf( 'Данные платежа %s', json_encode( $payment_data ) ), $invoice->ID );
             wpinv_insert_payment_note($invoice->ID, 'Не удалось получить адрес формы оплаты. Подробнсти см. в логе ошибок');
             wpinv_update_payment_status( $invoice->ID, 'wpi-pending' );
-            wpinv_send_to_failed_page();      
+            wpinv_send_to_failed_page();
         }
     } else {
         // счет не сушествует
@@ -166,24 +171,29 @@ function wpinv_process_ipayby_payment( $purchase_data ) {
 }
 add_action( 'wpinv_gateway_ipayby', 'wpinv_process_ipayby_payment' );
 
-function wpinv_ipayby_get_payment_data($payment_data) 
+/**
+ * Получение от банка данных для начала оплаты
+ *
+ * @param array $payment_data
+ * @return array|false false in failed
+ */
+function wpinv_ipayby_get_payment_data($payment_data)
 {
     $amount = $payment_data['amount'];
     $orderNo = $payment_data['invoiceKey'];
     $description = urlencode($payment_data['description']);
-    $curr =  $payment_data['currencyCode'];                                               
+    $curr =  $payment_data['currencyCode'];
     $returnUrl = urlencode($payment_data['returnUrl']);
-    $bankUsername = wpinv_get_option( 'ipayby_merch_username', false ); //'Testing';
-    $bankSecret =   wpinv_get_option( 'ipayby_merch_password', false ); //'Testing123';
-    $baseUrl = wpinv_get_option( 'ipayby_baseurl', false );      // 'https://mpi-test.bgpb.by:9443';
-//wp_die($baseUrl. ' - '. $bankUsername.' - '.$bankSecret);
+    $bankUsername = wpinv_get_option( 'ipayby_merch_username', false );
+    $bankSecret =   wpinv_get_option( 'ipayby_merch_password', false );
+    $baseUrl = wpinv_get_option( 'ipayby_baseurl', false );      // 'https://mpi.test.by:9443';
     $url = "{$baseUrl}/payment/rest/register.do?amount={$amount}&currency={$curr}&language=ru&orderNumber={$orderNo}&returnUrl={$returnUrl}&userName={$bankUsername}&password={$bankSecret}&description={$description}";
-error_log('wpinv_ipayby_get_payment_data bank request -- '.$url);    
+error_log('wpinv_ipayby_get_payment_data bank request -- '.$url);
     $response = wpinv_ipayby_http_get_ssl($url); // wp_remote_get($url);
 error_log('wpinv_ipayby_get_payment_data bank response -- ' . $response);
     if (!$response) {
         wpinv_record_gateway_error('Ошибка платежа ipay.by', 'Ошибка связи с сервером', $orderNo );
-        //error_log('wpinv_ipayby_get_payment_data bank response error -- ' . curl_error($curl));        
+        //error_log('wpinv_ipayby_get_payment_data bank response error -- ' . curl_error($curl));
         return false;
     }
     $responseData = json_decode($response, true);
@@ -194,39 +204,46 @@ error_log('wpinv_ipayby_get_payment_data bank response -- ' . $response);
     return $responseData;
 }
 
-function wpinv_ipayby_process_ipn() 
+/**
+ * обработчик ответа из банка
+ *
+ *  @return void
+ */
+function wpinv_ipayby_process_ipn()
 {
     $request = wpinv_get_post_data();
-error_log('wpinv_ipayby_process_ipn --'.json_encode($request)); 
-    $invoice_id   = wpinv_get_invoice_id_by_key( $request['invoiceKey'] );
-    // проверяем оплату
-    $invoice = wpinv_get_invoice( $invoice_id); 
+error_log('wpinv_ipayby_process_ipn --'.json_encode($request));
+    $invoice_id = wpinv_get_invoice_id_by_key( $request['invoiceKey'] );
+    // проверяем наличие счета
+    $invoice = wpinv_get_invoice( $invoice_id);
     if(empty($invoice)){
-error_log('ipn: invoice not found ');         
-        wpinv_record_gateway_error( 'Ошибка обработки платежа ipay.by', sprintf( 'Счет не найден. Данные запроса: %s', json_encode( $request ) ));        
+error_log('ipn: invoice not found ');
+        wpinv_record_gateway_error( 'Ошибка обработки платежа ipay.by', sprintf( 'Счет не найден. Данные запроса: %s', json_encode( $request ) ));
         wpinv_send_to_failed_page();
-    } 
+    }
+    // сверяем номер банковской транзакции
     $orderId = $invoice->transaction_id;
     if($orderId !== $request['orderId']){
-error_log('ipn: transations not equal '. $orderId . '<>'. $request['orderId']);        
-        wpinv_record_gateway_error( 'Ошибка обработки платежа ipay.by', sprintf( 'не совпадают коды транзакций %s<>%s', $orderId, $request['orderId']));        
+error_log('ipn: transations not equal '. $orderId . '<>'. $request['orderId']);
+        wpinv_record_gateway_error( 'Ошибка обработки платежа ipay.by', sprintf( 'не совпадают коды транзакций %s<>%s', $orderId, $request['orderId']));
         wpinv_insert_payment_note($invoice->ID, 'Ошибка обработки платежа ipay.by, не совпадают коды транзакций. Подробности см. в логе ошибок');
         wpinv_send_to_failed_page();
     }
 
+    // проверяем полученные данные, делая запрос в банк
     $responseData = wpinv_ipayby_check_order($request);
     if (!$responseData) {
-        error_log('ipn: check order status error ');        
-        wpinv_record_gateway_error( 'Ошибка проверки платежа ipay.by', '');        
+        error_log('ipn: check order status error ');
+        wpinv_record_gateway_error( 'Ошибка проверки платежа ipay.by', '');
         wpinv_insert_payment_note($invoice->ID, 'Ошибка проверки платежа ipay.by. Подробности см. в логе ошибок');
-        wpinv_send_to_failed_page();        
+        wpinv_send_to_failed_page();
     }
 
     wpinv_insert_payment_note($invoice->ID, 'Данные проверки оплаты: '. json_encode($responseData));
     if (0 != $responseData['ErrorCode']) {
         wpinv_update_payment_status( $invoice->ID, 'wpi-failed' );
         wpinv_insert_payment_note($invoice->ID, sprintf( 'Ошибка проверки платежа ipay.by %s-%s', $responseData['ErrorCode'], $responseData['ErrorMessage']));
-        wpinv_send_to_failed_page();              
+        wpinv_send_to_failed_page();
     }
     // наконец-то успех
     wpinv_update_payment_status( $invoice->ID, 'publish' );
@@ -234,19 +251,28 @@ error_log('ipn: transations not equal '. $orderId . '<>'. $request['orderId']);
 }
 add_action( 'wpinv_verify_ipayby_ipn', 'wpinv_ipayby_process_ipn' );
 
-function wpinv_ipayby_check_order($payment_data) 
+/**
+ * Проверяет данные платежа, делая запрос к серверу банка
+ *
+ * @param array $payment_data данные из банка
+ * @return array|false массив данных с ответом из банка или false в случае ошибки
+ */
+function wpinv_ipayby_check_order($payment_data)
 {
-    $bankUsername = 'Testing';
-    $bankSecret = 'Testing123';
+error_log(__METHOD__);
+    $bankUsername = wpinv_get_option( 'ipayby_merch_username', false );
+    $bankSecret =   wpinv_get_option( 'ipayby_merch_password', false );
+
     $orderId = $payment_data['orderId']; // transaction_id
 
     $baseUrl = wpinv_get_option( 'ipayby_baseurl', false );
     $url = "{$baseUrl}/payment/rest/getOrderStatus.do?orderId={$orderId}&password={$bankSecret}&userName={$bankUsername}";
-
+error_log('call to url  -- ' . $url);
     $response = wpinv_ipayby_http_get_ssl($url);
+    error_log('response  -- ' . $response);
     if (!$response) {
         wpinv_record_gateway_error('Ошибка проверки платежа ipay.by', 'Ошибка связи с сервером', $orderNo );
-        //error_log('wpinv_ipayby_get_payment_data bank response error -- ' . curl_error($curl));        
+error_log('response error -- ' . curl_error($curl));
         return false;
     }
     $responseData = json_decode($response, true);
@@ -257,11 +283,17 @@ function wpinv_ipayby_check_order($payment_data)
     return $responseData;
 }
 
+/**
+ * get запрос к серверу банка с использованием ssl
+ *
+ * @param string $url
+ * @return string результат выполнения curl
+ */
 function wpinv_ipayby_http_get_ssl($url)
 {
-    // из настроек 
-    $sslCert =  wpinv_get_option( 'ipayby_certfilename', false );
-    $sslKey = wpinv_get_option( 'ipayby_pkfilename', false ); 
+    // из настроек
+    $sslCert =   wpinv_get_option( 'ipayby_certfilename', false );
+    $sslKey =  wpinv_get_option( 'ipayby_pkfilename', false );
     $sslPass = wpinv_get_option( 'ipayby_pk_password', false );
 
     $curl = curl_init();
@@ -278,8 +310,9 @@ function wpinv_ipayby_http_get_ssl($url)
     curl_setopt($curl, CURLOPT_RETURNTRANSFER, true);
     $result = curl_exec($curl);
     if (false === $result) {
+        error_log(__METHOD__);
         error_log('curl error:' . curl_error($curl));
-        error_log('curl request: ' . $url);        
+        error_log('curl request: ' . $url);
     }
     return $result;
 }
