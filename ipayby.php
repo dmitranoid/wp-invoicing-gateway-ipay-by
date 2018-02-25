@@ -154,7 +154,6 @@ function wpinv_process_ipayby_payment( $purchase_data ) {
             // переходим к оплате
             wp_redirect($bankResponseData['formUrl']);
             exit;
-        //wpinv_send_to_success_page( array( 'invoice_key' => $invoice->get_key() ) );
         } else {
             // не удалось получить адрес формы оплаты
             wpinv_record_gateway_error('Ошибка платежа ipay.by', sprintf( 'Данные платежа %s', json_encode( $payment_data ) ), $invoice->ID );
@@ -247,7 +246,7 @@ error_log('ipn: transations not equal '. $orderId . '<>'. $request['orderId']);
     }
     // наконец-то успех
     wpinv_update_payment_status( $invoice->ID, 'publish' );
-    wpinv_send_to_success_page();
+    wpinv_send_to_success_page(array( 'invoice_key' => $invoice->get_key() ) );
 }
 add_action( 'wpinv_verify_ipayby_ipn', 'wpinv_ipayby_process_ipn' );
 
@@ -269,7 +268,7 @@ error_log(__METHOD__);
     $url = "{$baseUrl}/payment/rest/getOrderStatus.do?orderId={$orderId}&password={$bankSecret}&userName={$bankUsername}";
 error_log('call to url  -- ' . $url);
     $response = wpinv_ipayby_http_get_ssl($url);
-    error_log('response  -- ' . $response);
+    error_log('response -- ' . $response);
     if (!$response) {
         wpinv_record_gateway_error('Ошибка проверки платежа ipay.by', 'Ошибка связи с сервером', $orderNo );
 error_log('response error -- ' . curl_error($curl));
