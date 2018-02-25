@@ -207,7 +207,7 @@ error_log('wpinv_ipayby_get_payment_data bank response -- ' . $response);
 /**
  * обработчик ответа из банка
  *
- *  @return void
+ * @return void
  */
 function wpinv_ipayby_process_ipn()
 {
@@ -287,12 +287,12 @@ error_log('response error -- ' . curl_error($curl));
  * get запрос к серверу банка с использованием ssl
  *
  * @param string $url
- * @return string результат выполнения curl
+ * @return string|false ответ из банка
  */
 function wpinv_ipayby_http_get_ssl($url)
 {
     // из настроек
-    $sslCert =   wpinv_get_option( 'ipayby_certfilename', false );
+    $sslCert = wpinv_get_option( 'ipayby_certfilename', false );
     $sslKey =  wpinv_get_option( 'ipayby_pkfilename', false );
     $sslPass = wpinv_get_option( 'ipayby_pk_password', false );
 
